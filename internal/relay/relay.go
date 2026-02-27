@@ -377,6 +377,11 @@ func (ra *relayAttempt) handleStreamResponse(ctx context.Context, response *http
 		case r, ok := <-results:
 			if !ok {
 				log.Infof("stream end")
+				// 流结束后检查响应内容是否为空
+				// 这是流式响应的后置检查机制
+				if err := ra.checkStreamResponseEmpty(ctx); err != nil {
+					return err
+				}
 				return nil
 			}
 			if r.err != nil {
@@ -407,6 +412,30 @@ func (ra *relayAttempt) handleStreamResponse(ctx context.Context, response *http
 			ra.c.Writer.Flush()
 		}
 	}
+}
+
+// checkStreamResponseEmpty 检查聚合后的流式响应内容是否为空。
+// 如果为空，返回错误以触发熔断器记录失败。
+// 这是流式响应的后置检查机制，因为流式响应一旦开始向下游转发就无法撤回。
+// 注意：此方法会缓存获取到的响应，供 collectResponse() 使用。
+func (ra *relayAttempt) checkStreamResponseEmpty(ctx context.Context) error {
+	internalResponse, err := ra.inAdapter.GetInternalResponse(ctx)
+	if err != nil {
+		// 如果无法获取响应，不将其视为空内容错误
+		log.Warnf("failed to get internal response for empty check: %v", err)
+		return nil
+	}
+
+	// 缓存响应，供 collectResponse() 使用
+	// 因为 GetInternalResponse() 会清除内部存储的流式响应块
+	ra.cachedResponse = internalResponse
+
+	if internalResponse != nil && internalResponse.IsEmpty() {
+		log.Warnf("stream response content is empty, recording as failure for circuit breaker")
+		return errStreamResponseEmpty
+	}
+
+	return nil
 }
 
 // transformStreamData 转换流式数据
@@ -449,9 +478,14 @@ func (ra *relayAttempt) handleResponse(ctx context.Context, response *http.Respo
 
 // collectResponse 收集响应信息
 func (ra *relayAttempt) collectResponse() {
-	internalResponse, err := ra.inAdapter.GetInternalResponse(ra.c.Request.Context())
-	if err != nil || internalResponse == nil {
-		return
+	// 优先使用缓存的响应（流式响应场景下由 checkStreamResponseEmpty() 缓存）
+	internalResponse := ra.cachedResponse
+	if internalResponse == nil {
+		var err error
+		internalResponse, err = ra.inAdapter.GetInternalResponse(ra.c.Request.Context())
+		if err != nil || internalResponse == nil {
+			return
+		}
 	}
 
 	ra.metrics.SetInternalResponse(internalResponse, ra.internalRequest.Model)

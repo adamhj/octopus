@@ -691,6 +691,8 @@ func (r *InternalLLMResponse) IsChatResponse() bool {
 	return len(r.Choices) > 0
 }
 
+// IsEmpty 检查响应内容是否为空。
+// 用于检测上游返回的响应是否包含有效内容（文本、工具调用、推理内容等）。
 func (r *InternalLLMResponse) IsEmpty() bool {
 	if r == nil {
 		return true

@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"errors"
 	"os"
 	"strconv"
 	"strings"
@@ -11,6 +12,10 @@ import (
 	"github.com/bestruirui/octopus/internal/transformer/model"
 	"github.com/gin-gonic/gin"
 )
+
+// errStreamResponseEmpty 当流式响应完成但不包含实际内容时返回此错误。
+// 此错误用于触发熔断器记录空内容的流式响应失败。
+var errStreamResponseEmpty = errors.New("stream response content is empty")
 
 // maxSSEEventSize 定义 SSE 事件的最大大小。
 // 对于图像生成模型（如 gemini-3-pro-image-preview），返回的 base64 编码图像数据
@@ -71,6 +76,10 @@ type relayAttempt struct {
 	channel              *dbmodel.Channel
 	usedKey              dbmodel.ChannelKey
 	firstTokenTimeOutSec int
+
+	// cachedResponse 缓存的内部响应，用于流式响应场景
+	// 在 checkStreamResponseEmpty() 中获取并缓存，供 collectResponse() 使用
+	cachedResponse *model.InternalLLMResponse
 }
 
 // attemptResult 封装单次尝试的结果
