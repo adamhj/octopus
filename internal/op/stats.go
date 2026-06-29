@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -577,4 +578,316 @@ func statsRefreshCache(ctx context.Context) error {
 	statsDetailCacheLock.Unlock()
 
 	return nil
+}
+
+// -------------------- Chart API --------------------
+
+// periodBucketFunc 为每种周期定义：如何将 StatsDetail 行映射为桶键、如何格式化桶键为展示字符串、
+// 以及如何生成从 start 到 end 的所有桶键。
+type periodBucketFunc struct {
+	// rowKey 从一行明细数据生成桶键
+	rowKey func(d model.StatsDetail) string
+	// bucketLabel 将桶键转为前端可展示的时间字符串
+	bucketLabel func(bucketKey string) string
+	// generateKeys 生成从 start 到 end（含）的所有桶键，按时间顺序排列
+	generateKeys func(start, end time.Time) []string
+	// bucketTime 将桶键解析回 time.Time，用于范围过滤判断
+	bucketTime func(bucketKey string) time.Time
+}
+
+// getPeriodFunc 根据周期名返回对应的桶处理函数集。
+// 返回 nil 表示不支持的周期。
+func getPeriodFunc(period string) *periodBucketFunc {
+	switch period {
+	case "hour":
+		return &periodBucketFunc{
+			rowKey: func(d model.StatsDetail) string {
+				return d.Date + "_" + fmt.Sprintf("%02d", d.Hour)
+			},
+			bucketLabel: func(key string) string {
+				// key: "20260115_08" → "2026-01-15T08"
+				return key[:4] + "-" + key[4:6] + "-" + key[6:8] + "T" + key[9:]
+			},
+			generateKeys: generateHourKeys,
+			bucketTime: func(key string) time.Time {
+				t, _ := time.ParseInLocation("20060102_15", key, time.UTC)
+				return t
+			},
+		}
+	case "day":
+		return &periodBucketFunc{
+			rowKey: func(d model.StatsDetail) string {
+				return d.Date
+			},
+			bucketLabel: func(key string) string {
+				// key: "20260115" → "2026-01-15"
+				return key[:4] + "-" + key[4:6] + "-" + key[6:8]
+			},
+			generateKeys: generateDayKeys,
+			bucketTime: func(key string) time.Time {
+				t, _ := time.ParseInLocation("20060102", key, time.UTC)
+				return t
+			},
+		}
+	case "week":
+		return &periodBucketFunc{
+			rowKey: func(d model.StatsDetail) string {
+				t, _ := time.ParseInLocation("20060102", d.Date, time.UTC)
+				return weekMonday(t).Format("20060102")
+			},
+			bucketLabel: func(key string) string {
+				return key[:4] + "-" + key[4:6] + "-" + key[6:8]
+			},
+			generateKeys: generateWeekKeys,
+			bucketTime: func(key string) time.Time {
+				t, _ := time.ParseInLocation("20060102", key, time.UTC)
+				return t
+			},
+		}
+	case "month":
+		return &periodBucketFunc{
+			rowKey: func(d model.StatsDetail) string {
+				return d.Date[:6]
+			},
+			bucketLabel: func(key string) string {
+				// key: "202601" → "2026-01"
+				return key[:4] + "-" + key[4:6]
+			},
+			generateKeys: generateMonthKeys,
+			bucketTime: func(key string) time.Time {
+				t, _ := time.ParseInLocation("200601", key, time.UTC)
+				return t
+			},
+		}
+	}
+	return nil
+}
+
+// weekMonday 返回 t 所在周的周一 00:00 UTC。
+func weekMonday(t time.Time) time.Time {
+	weekday := t.Weekday()
+	if weekday == time.Sunday {
+		weekday = 7
+	}
+	offset := int(weekday) - int(time.Monday)
+	monday := t.AddDate(0, 0, -offset)
+	return time.Date(monday.Year(), monday.Month(), monday.Day(), 0, 0, 0, 0, time.UTC)
+}
+
+// generateHourKeys 生成从 start 到 end（含）之间所有整点小时的桶键。
+func generateHourKeys(start, end time.Time) []string {
+	startHour := time.Date(start.Year(), start.Month(), start.Day(), start.Hour(), 0, 0, 0, time.UTC)
+	endHour := time.Date(end.Year(), end.Month(), end.Day(), end.Hour(), 0, 0, 0, time.UTC)
+	var keys []string
+	for t := startHour; !t.After(endHour); t = t.Add(time.Hour) {
+		keys = append(keys, t.Format("20060102_15"))
+	}
+	return keys
+}
+
+// generateDayKeys 生成从 start 到 end（含）之间所有自然日的桶键。
+func generateDayKeys(start, end time.Time) []string {
+	startDay := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.UTC)
+	endDay := time.Date(end.Year(), end.Month(), end.Day(), 0, 0, 0, 0, time.UTC)
+	var keys []string
+	for t := startDay; !t.After(endDay); t = t.AddDate(0, 0, 1) {
+		keys = append(keys, t.Format("20060102"))
+	}
+	return keys
+}
+
+// generateWeekKeys 生成从 start 所在周的周一到 end 所在周的周一（含）的所有周桶键。
+func generateWeekKeys(start, end time.Time) []string {
+	startMonday := weekMonday(start)
+	endMonday := weekMonday(end)
+	var keys []string
+	for t := startMonday; !t.After(endMonday); t = t.AddDate(0, 0, 7) {
+		keys = append(keys, t.Format("20060102"))
+	}
+	return keys
+}
+
+// generateMonthKeys 生成从 start 所在月到 end 所在月（含）的所有月桶键。
+func generateMonthKeys(start, end time.Time) []string {
+	startMonth := time.Date(start.Year(), start.Month(), 1, 0, 0, 0, 0, time.UTC)
+	endMonth := time.Date(end.Year(), end.Month(), 1, 0, 0, 0, 0, time.UTC)
+	var keys []string
+	for t := startMonth; !t.After(endMonth); t = t.AddDate(0, 1, 0) {
+		keys = append(keys, t.Format("200601"))
+	}
+	return keys
+}
+
+// generateBucketTimes 生成从 start 到 end（含）之间的桶时间标签列表（给测试用）。
+// start 和 end 的小时已对齐到 HH:00（由 handler 层保证），分钟/秒为零。
+func generateBucketTimes(start, end time.Time, period string) []string {
+	pf := getPeriodFunc(period)
+	if pf == nil {
+		return nil
+	}
+	keys := pf.generateKeys(start, end)
+	labels := make([]string, len(keys))
+	for i, k := range keys {
+		labels[i] = pf.bucketLabel(k)
+	}
+	return labels
+}
+
+// slotKey 用于在聚合时区分同一桶内不同 (channel_id, actual_model_name) 组合。
+type slotKey struct {
+	ChannelID       int
+	ActualModelName string
+}
+
+// buildChartBuckets 纯函数：根据给定条件从明细行构建图表响应。
+// rows 应为按 start~end 过滤后的数据，不包含范围外数据。
+// getChannelName 用于从渠道 ID 查找渠道名称。
+func buildChartBuckets(
+	rows []model.StatsDetail,
+	start, end time.Time,
+	period string,
+	getChannelName func(channelID int) string,
+) model.StatsChartResult {
+	pf := getPeriodFunc(period)
+	if pf == nil {
+		return model.StatsChartResult{Period: period, Buckets: []model.StatsChartBucket{}}
+	}
+
+	// 1. 将行映射到桶键
+	type bucketData struct {
+		slots    map[slotKey]*model.StatsChartSlot
+		slotList []*model.StatsChartSlot // 用于保持插入顺序
+	}
+	bucketMap := make(map[string]*bucketData)
+
+	for _, row := range rows {
+		bk := pf.rowKey(row)
+		bd, ok := bucketMap[bk]
+		if !ok {
+			bd = &bucketData{
+				slots:    make(map[slotKey]*model.StatsChartSlot),
+				slotList: make([]*model.StatsChartSlot, 0),
+			}
+			bucketMap[bk] = bd
+		}
+
+		sk := slotKey{ChannelID: row.ChannelID, ActualModelName: row.ActualModelName}
+		slot, ok := bd.slots[sk]
+		if !ok {
+			slot = &model.StatsChartSlot{
+				ChannelID:       row.ChannelID,
+				ActualModelName: row.ActualModelName,
+				ChannelName:     getChannelName(row.ChannelID),
+			}
+			bd.slots[sk] = slot
+			bd.slotList = append(bd.slotList, slot)
+		}
+
+		slot.InputToken += row.InputToken
+		slot.OutputToken += row.OutputToken
+		slot.CacheReadTokens += row.CacheReadTokens
+		slot.APICallCount += row.APICallCount
+		slot.InputCost += row.InputCost
+		slot.OutputCost += row.OutputCost
+	}
+
+	// 2. 构建最终 buckets（保留空桶）
+	bucketKeys := pf.generateKeys(start, end)
+	buckets := make([]model.StatsChartBucket, 0, len(bucketKeys))
+
+	for _, bk := range bucketKeys {
+		slots := make([]model.StatsChartSlot, 0)
+		bd := bucketMap[bk]
+		if bd != nil {
+			// 过滤空槽位（input + output = 0）
+			for _, s := range bd.slotList {
+				if s.InputToken > 0 || s.OutputToken > 0 {
+					slots = append(slots, *s)
+				}
+			}
+			// 按 channel_id + actual_model_name 排序
+			sortSlots(slots)
+		}
+
+		buckets = append(buckets, model.StatsChartBucket{
+			Time:  pf.bucketLabel(bk),
+			Slots: slots,
+		})
+	}
+
+	return model.StatsChartResult{
+		Period:  period,
+		Buckets: buckets,
+	}
+}
+
+// sortSlots 对槽位列表按 channel_id ASC, actual_model_name ASC 排序。
+func sortSlots(slots []model.StatsChartSlot) {
+	sort.Slice(slots, func(i, j int) bool {
+		if slots[i].ChannelID != slots[j].ChannelID {
+			return slots[i].ChannelID < slots[j].ChannelID
+		}
+		return slots[i].ActualModelName < slots[j].ActualModelName
+	})
+}
+
+// StatsDetailChartQuery 查询图表统计数据。从 StatsDetail 表按时间范围+可选过滤条件读取原始行，
+// 然后按指定的聚合周期生成分桶图表响应。
+func StatsDetailChartQuery(
+	ctx context.Context,
+	startTime, endTime time.Time,
+	channelID *int,
+	modelName string,
+	period string,
+) (model.StatsChartResult, error) {
+	// 校验周期
+	if getPeriodFunc(period) == nil {
+		return model.StatsChartResult{}, fmt.Errorf("unsupported period: %s", period)
+	}
+
+	// 构造查询
+	startDate := startTime.Format("20060102")
+	endDate := endTime.Format("20060102")
+	startHour := startTime.Hour()
+	endHour := endTime.Hour()
+
+	query := db.GetDB().WithContext(ctx).Model(&model.StatsDetail{})
+
+	// 时间范围过滤：
+	// 跨天时：date >= startDate AND date <= endDate，首尾天不额外限制小时
+	// 同一天时：date = startDate AND hour BETWEEN startHour AND endHour
+	if startDate == endDate {
+		query = query.Where("date = ? AND hour >= ? AND hour <= ?", startDate, startHour, endHour)
+	} else {
+		// 跨天：使用 OR 条件精确限定首尾天的小时范围，中间天全包含
+		query = query.Where(
+			"(date = ? AND hour >= ?) OR (date > ? AND date < ?) OR (date = ? AND hour <= ?)",
+			startDate, startHour,
+			startDate, endDate,
+			endDate, endHour,
+		)
+	}
+
+	if channelID != nil {
+		query = query.Where("channel_id = ?", *channelID)
+	}
+	if modelName != "" {
+		query = query.Where("actual_model_name = ?", modelName)
+	}
+
+	var rows []model.StatsDetail
+	if err := query.Find(&rows).Error; err != nil {
+		return model.StatsChartResult{}, err
+	}
+
+	// 使用 channelCache 提供渠道名称映射
+	getName := func(id int) string {
+		ch, ok := channelCache.Get(id)
+		if !ok {
+			return ""
+		}
+		return ch.Name
+	}
+
+	return buildChartBuckets(rows, startTime, endTime, period, getName), nil
 }

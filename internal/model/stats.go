@@ -55,6 +55,33 @@ type StatsDetail struct {
 	APICallCount    int64  `json:"api_call_count" gorm:"bigint"`    // API 调用次数（每次 relay 计 1）
 }
 
+// StatsChartResult 图表统计查询的完整响应结构。
+type StatsChartResult struct {
+	Period  string             `json:"period"`
+	Buckets []StatsChartBucket `json:"buckets"`
+}
+
+// StatsChartBucket 图表统计中的一个时间桶，包含该时间段内按渠道+模型聚合的槽位列表。
+// 即使某时间段无数据，桶也会保留（slots 为空数组），确保横轴连续。
+type StatsChartBucket struct {
+	Time  string           `json:"time"`
+	Slots []StatsChartSlot `json:"slots"`
+}
+
+// StatsChartSlot 时间桶内按 channel_id + actual_model_name 分组聚合后的统计槽位。
+// 只有 input_token + output_token > 0 的组合才会出现在结果中。
+type StatsChartSlot struct {
+	ChannelID       int     `json:"channel_id"`
+	ChannelName     string  `json:"channel_name"`
+	ActualModelName string  `json:"actual_model_name"`
+	InputToken      int64   `json:"input_token"`
+	OutputToken     int64   `json:"output_token"`
+	CacheReadTokens int64   `json:"cache_read_tokens"`
+	APICallCount    int64   `json:"api_call_count"`
+	InputCost       float64 `json:"input_cost"`
+	OutputCost      float64 `json:"output_cost"`
+}
+
 // Add aggregates another StatsMetrics into the current one.
 func (s *StatsMetrics) Add(delta StatsMetrics) {
 	s.InputToken += delta.InputToken
