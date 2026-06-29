@@ -302,6 +302,21 @@ func (m *imagesRelayMetrics) Save(ctx context.Context, success bool, err error, 
 	op.StatsAPIKeyUpdate(m.APIKeyID, globalStats)
 	op.StatsChannelUpdate(channelID, globalStats)
 
+	// 明细统计：Images API 不返回缓存 Token 信息，cacheRead 为 0
+	actualModel := m.ActualModel
+	if actualModel == "" {
+		actualModel = m.RequestModel
+	}
+	now := time.Now()
+	op.StatsDetailUpdate(
+		now.Format("20060102"),
+		now.Hour(),
+		channelID,
+		actualModel,
+		globalStats,
+		0,
+	)
+
 	log.Infof("images relay complete: model=%s, channel=%d(%s), success=%t, duration=%dms, input_token=%d, output_token=%d, input_cost=%f, output_cost=%f, total_cost=%f, attempts=%d",
 		m.RequestModel, channelID, channelName, success, duration.Milliseconds(),
 		m.Stats.InputToken, m.Stats.OutputToken,
@@ -328,6 +343,8 @@ func (m *imagesRelayMetrics) saveLog(ctx context.Context, err error, duration ti
 		TotalAttempts:    len(attempts),
 		RequestContent:   m.RequestContent,
 		ResponseContent:  m.ResponseContent,
+		// Images API 不返回缓存 Token 信息，为 0
+		CacheReadTokens: 0,
 	}
 
 	if apiKey, getErr := op.APIKeyGet(m.APIKeyID, ctx); getErr == nil {
@@ -376,10 +393,10 @@ func buildImagesResponseContentForLog(stream bool, upstreamCT string, usage *ima
 	}
 	// 不记录 b64_json，仅记录 usage
 	type respForLog struct {
-		Stream      bool        `json:"stream"`
-		ContentType string      `json:"content_type,omitempty"`
+		Stream      bool         `json:"stream"`
+		ContentType string       `json:"content_type,omitempty"`
 		Usage       *imagesUsage `json:"usage,omitempty"`
-		Note        string      `json:"note,omitempty"`
+		Note        string       `json:"note,omitempty"`
 	}
 	obj := respForLog{
 		Stream:      stream,
@@ -756,8 +773,8 @@ func proxySSE(ctx context.Context, c *gin.Context, respUp *http.Response, firstT
 	}
 
 	var (
-		firstWrite      = true
-		currentEvent    string
+		firstWrite       = true
+		currentEvent     string
 		completedScanner = newUsageScanner()
 	)
 

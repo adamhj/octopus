@@ -43,6 +43,18 @@ type StatsAPIKey struct {
 	StatsMetrics
 }
 
+// StatsDetail 明细统计，按日期+小时+渠道+上游实际模型名四个维度交叉聚合，
+// 同时记录缓存读取 Token 分项数与 API 调用次数。只有在实际请求发生时才会写入对应组合行。
+type StatsDetail struct {
+	Date            string `json:"date" gorm:"primaryKey;size:8"`       // 日期，格式 20060102
+	Hour            int    `json:"hour" gorm:"primaryKey"`              // 小时 0-23
+	ChannelID       int    `json:"channel_id" gorm:"primaryKey"`        // 渠道 ID
+	ActualModelName string `json:"actual_model_name" gorm:"primaryKey"` // 上游实际模型名
+	StatsMetrics           // 嵌入 6 项基础指标
+	CacheReadTokens int64  `json:"cache_read_tokens" gorm:"bigint"` // 缓存读取 Token 数
+	APICallCount    int64  `json:"api_call_count" gorm:"bigint"`    // API 调用次数（每次 relay 计 1）
+}
+
 // Add aggregates another StatsMetrics into the current one.
 func (s *StatsMetrics) Add(delta StatsMetrics) {
 	s.InputToken += delta.InputToken

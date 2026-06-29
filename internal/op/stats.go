@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
@@ -35,6 +36,11 @@ var statsModelCacheNeedUpdateLock sync.Mutex
 var statsAPIKeyCache = cache.New[int, model.StatsAPIKey](16)
 var statsAPIKeyCacheNeedUpdate = make(map[int]struct{})
 var statsAPIKeyCacheNeedUpdateLock sync.Mutex
+
+// statsDetailCache 明细统计内存缓存，key 格式为 "YYYYMMDD_HH_ChannelID_ActualModelName"。
+// 只在有实际请求时才会创建对应组合行，不会产生全零行。
+var statsDetailCache = make(map[string]*model.StatsDetail)
+var statsDetailCacheLock sync.RWMutex
 
 func StatsSaveDBTask() {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -90,7 +96,15 @@ func StatsSaveDB(ctx context.Context) error {
 	statsAPIKeyCacheNeedUpdate = make(map[int]struct{})
 	statsAPIKeyCacheNeedUpdateLock.Unlock()
 
-	return persistStatsSnapshots(ctx, totalSnap, dailySnap, hourlyAll, channelIDs, modelIDs, apiKeyIDs)
+	statsDetailCacheLock.Lock()
+	statsDetailSnap := make([]model.StatsDetail, 0, len(statsDetailCache))
+	for _, v := range statsDetailCache {
+		statsDetailSnap = append(statsDetailSnap, *v)
+	}
+	statsDetailCache = make(map[string]*model.StatsDetail)
+	statsDetailCacheLock.Unlock()
+
+	return persistStatsSnapshots(ctx, totalSnap, dailySnap, hourlyAll, channelIDs, modelIDs, apiKeyIDs, statsDetailSnap)
 }
 
 func persistStatsSnapshots(
@@ -101,6 +115,7 @@ func persistStatsSnapshots(
 	channelIDs []int,
 	modelIDs []int,
 	apiKeyIDs []int,
+	statsDetailSnap []model.StatsDetail,
 ) error {
 	dbConn := db.GetDB().WithContext(ctx)
 
@@ -157,6 +172,25 @@ func persistStatsSnapshots(
 		}
 	}
 
+	// 明细统计：按复合主键 UPSERT，累加已有行
+	if len(statsDetailSnap) > 0 {
+		if result := dbConn.Clauses(clause.OnConflict{
+			Columns: []clause.Column{
+				{Name: "date"},
+				{Name: "hour"},
+				{Name: "channel_id"},
+				{Name: "actual_model_name"},
+			},
+			DoUpdates: clause.AssignmentColumns([]string{
+				"input_token", "output_token", "input_cost", "output_cost",
+				"wait_time", "request_success", "request_failed",
+				"cache_read_tokens", "api_call_count",
+			}),
+		}).Create(&statsDetailSnap); result.Error != nil {
+			return result.Error
+		}
+	}
+
 	return nil
 }
 
@@ -196,7 +230,15 @@ func statsSaveDBWithDailyOverride(ctx context.Context, dailyOverride model.Stats
 	statsAPIKeyCacheNeedUpdate = make(map[int]struct{})
 	statsAPIKeyCacheNeedUpdateLock.Unlock()
 
-	return persistStatsSnapshots(ctx, totalSnap, dailyOverride, hourlyAll, channelIDs, modelIDs, apiKeyIDs)
+	statsDetailCacheLock.Lock()
+	statsDetailSnap := make([]model.StatsDetail, 0, len(statsDetailCache))
+	for _, v := range statsDetailCache {
+		statsDetailSnap = append(statsDetailSnap, *v)
+	}
+	statsDetailCache = make(map[string]*model.StatsDetail)
+	statsDetailCacheLock.Unlock()
+
+	return persistStatsSnapshots(ctx, totalSnap, dailyOverride, hourlyAll, channelIDs, modelIDs, apiKeyIDs, statsDetailSnap)
 }
 
 func StatsDailyUpdate(ctx context.Context, metrics model.StatsMetrics) error {
@@ -289,6 +331,54 @@ func StatsAPIKeyUpdate(apiKeyID int, metrics model.StatsMetrics) error {
 	statsAPIKeyCacheNeedUpdate[apiKeyID] = struct{}{}
 	statsAPIKeyCacheNeedUpdateLock.Unlock()
 	return nil
+}
+
+// StatsDetailUpdate 更新明细统计缓存。按日期+小时+渠道+上游实际模型名定位唯一组合行，
+// 累加基础指标、缓存读取 Token 数与 API 调用次数。只有在实际请求发生时才会创建对应组合行。
+func StatsDetailUpdate(date string, hour int, channelID int, actualModelName string, metrics model.StatsMetrics, cacheRead int64) error {
+	key := date + "_" + strconv.Itoa(hour) + "_" + strconv.Itoa(channelID) + "_" + actualModelName
+
+	statsDetailCacheLock.Lock()
+	defer statsDetailCacheLock.Unlock()
+
+	detail, ok := statsDetailCache[key]
+	if !ok {
+		detail = &model.StatsDetail{
+			Date:            date,
+			Hour:            hour,
+			ChannelID:       channelID,
+			ActualModelName: actualModelName,
+		}
+		statsDetailCache[key] = detail
+	}
+	detail.StatsMetrics.Add(metrics)
+	detail.CacheReadTokens += cacheRead
+	detail.APICallCount++
+	return nil
+}
+
+// StatsDetailQuery 按任意维度组合查询明细统计。传入空值表示该维度不参与过滤。
+func StatsDetailQuery(ctx context.Context, date string, hour *int, channelID *int, actualModelName string) ([]model.StatsDetail, error) {
+	query := db.GetDB().WithContext(ctx).Model(&model.StatsDetail{})
+	if date != "" {
+		query = query.Where("date = ?", date)
+	}
+	if hour != nil {
+		query = query.Where("hour = ?", *hour)
+	}
+	if channelID != nil {
+		query = query.Where("channel_id = ?", *channelID)
+	}
+	if actualModelName != "" {
+		query = query.Where("actual_model_name = ?", actualModelName)
+	}
+	query = query.Order("date ASC, hour ASC, channel_id ASC, actual_model_name ASC")
+
+	var result []model.StatsDetail
+	if err := query.Find(&result).Error; err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 func StatsChannelDel(id int) error {
@@ -470,6 +560,21 @@ func statsRefreshCache(ctx context.Context) error {
 		}
 	}
 	statsHourlyCacheLock.Unlock()
+
+	// 加载今日明细统计到内存缓存，避免重启后当日数据丢失累加
+	var loadedDetail []model.StatsDetail
+	result = dbConn.Where("date = ?", today).Find(&loadedDetail)
+	if result.Error != nil {
+		return fmt.Errorf("failed to get stats_details: %v", result.Error)
+	}
+	statsDetailCacheLock.Lock()
+	statsDetailCache = make(map[string]*model.StatsDetail, len(loadedDetail))
+	for i := range loadedDetail {
+		d := loadedDetail[i]
+		key := d.Date + "_" + strconv.Itoa(d.Hour) + "_" + strconv.Itoa(d.ChannelID) + "_" + d.ActualModelName
+		statsDetailCache[key] = &d
+	}
+	statsDetailCacheLock.Unlock()
 
 	return nil
 }

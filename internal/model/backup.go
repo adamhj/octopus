@@ -13,10 +13,10 @@ type DBDump struct {
 	Channels    []Channel    `json:"channels,omitempty"`
 	ChannelKeys []ChannelKey `json:"channel_keys,omitempty"`
 	Groups      []Group      `json:"groups,omitempty"`
-	GroupItems []GroupItem `json:"group_items,omitempty"`
-	LLMInfos   []LLMInfo   `json:"llm_infos,omitempty"`
-	APIKeys    []APIKey    `json:"api_keys,omitempty"`
-	Settings   []Setting   `json:"settings,omitempty"`
+	GroupItems  []GroupItem  `json:"group_items,omitempty"`
+	LLMInfos    []LLMInfo    `json:"llm_infos,omitempty"`
+	APIKeys     []APIKey     `json:"api_keys,omitempty"`
+	Settings    []Setting    `json:"settings,omitempty"`
 
 	StatsTotal   []StatsTotal   `json:"stats_total,omitempty"`
 	StatsDaily   []StatsDaily   `json:"stats_daily,omitempty"`
@@ -24,6 +24,7 @@ type DBDump struct {
 	StatsModel   []StatsModel   `json:"stats_model,omitempty"`
 	StatsChannel []StatsChannel `json:"stats_channel,omitempty"`
 	StatsAPIKey  []StatsAPIKey  `json:"stats_api_key,omitempty"`
+	StatsDetail  []StatsDetail  `json:"stats_detail,omitempty"`
 
 	RelayLogs []RelayLog `json:"relay_logs,omitempty"`
 }
