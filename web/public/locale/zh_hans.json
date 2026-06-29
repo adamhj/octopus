@@ -50,6 +50,7 @@
         "key": "密钥",
         "model": "价格",
         "log": "日志",
+        "stats-query": "用量查询",
         "setting": "设置"
     },
     "toolbar": {
@@ -138,6 +139,40 @@
             "sortByTokens": "Tokens",
             "noData": "暂无排行数据",
             "successRate": "成功率"
+        }
+    },
+    "statsQuery": {
+        "title": "用量查询",
+        "startTime": "开始时间",
+        "endTime": "结束时间",
+        "channel": "渠道",
+        "channelPlaceholder": "全部渠道",
+        "model": "模型",
+        "modelPlaceholder": "全部模型",
+        "period": {
+            "label": "统计周期",
+            "hour": "按小时",
+            "day": "按天",
+            "week": "按周",
+            "month": "按月"
+        },
+        "query": "查询",
+        "querying": "查询中...",
+        "chartTitle": "用量图表",
+        "noData": "所选时间段暂无数据",
+        "searchNoMatch": "无匹配结果",
+        "tooltip": {
+            "inputTokens": "输入 Token",
+            "outputTokens": "输出 Token",
+            "cacheReadTokens": "缓存读取 Token",
+            "cacheHitRate": "缓存命中率",
+            "callCount": "调用次数",
+            "cost": "费用"
+        },
+        "channelFallback": "渠道 {id}",
+        "error": {
+            "startAfterEnd": "开始时间不能晚于结束时间",
+            "apiError": "API 请求失败"
         }
     },
     "setting": {

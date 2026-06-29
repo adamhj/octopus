@@ -172,6 +172,28 @@ export function useChannelList() {
 }
 
 /**
+ * 获取渠道下拉选项（无轮询版本）
+ * 用于下拉选择等无需实时更新的场景，共享 ['channels', 'list'] 缓存。
+ */
+export function useChannelOptions() {
+    return useQuery({
+        queryKey: ['channels', 'list'],
+        queryFn: async () => {
+            return apiClient.get<ChannelServer[]>('/api/v1/channel/list');
+        },
+        select: (data) => data.map((item) => ({
+            ...item,
+            base_urls: item.base_urls ?? [],
+            custom_header: item.custom_header ?? [],
+            keys: item.keys ?? [],
+        }) as Channel),
+        staleTime: 5 * 60 * 1000,
+        refetchOnMount: 'always',
+        refetchOnWindowFocus: false,
+    });
+}
+
+/**
  * 创建渠道 Hook
  * 
  * @example

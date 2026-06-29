@@ -50,6 +50,7 @@
         "key": "金鑰",
         "model": "價格",
         "log": "日誌",
+        "stats-query": "用量查詢",
         "setting": "設定"
     },
     "toolbar": {
@@ -138,6 +139,40 @@
             "sortByTokens": "Tokens",
             "noData": "暫無排行數據",
             "successRate": "成功率"
+        }
+    },
+    "statsQuery": {
+        "title": "用量查詢",
+        "startTime": "開始時間",
+        "endTime": "結束時間",
+        "channel": "供應源",
+        "channelPlaceholder": "全部供應源",
+        "model": "模型",
+        "modelPlaceholder": "全部模型",
+        "period": {
+            "label": "統計週期",
+            "hour": "按小時",
+            "day": "按天",
+            "week": "按週",
+            "month": "按月"
+        },
+        "query": "查詢",
+        "querying": "查詢中...",
+        "chartTitle": "用量圖表",
+        "noData": "所選時間段暫無數據",
+        "searchNoMatch": "無匹配結果",
+        "tooltip": {
+            "inputTokens": "輸入 Token",
+            "outputTokens": "輸出 Token",
+            "cacheReadTokens": "快取讀取 Token",
+            "cacheHitRate": "快取命中率",
+            "callCount": "呼叫次數",
+            "cost": "費用"
+        },
+        "channelFallback": "供應源 {id}",
+        "error": {
+            "startAfterEnd": "開始時間不能晚於結束時間",
+            "apiError": "API 請求失敗"
         }
     },
     "setting": {
