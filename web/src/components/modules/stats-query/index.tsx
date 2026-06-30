@@ -8,7 +8,6 @@ import {
     XAxis,
     YAxis,
     CartesianGrid,
-    Tooltip,
     ResponsiveContainer,
 } from 'recharts';
 import { useTranslations } from 'next-intl';
@@ -48,13 +47,25 @@ function hslToString({ h, s, l }: HslColor): string {
     return `hsl(${h}, ${s}%, ${l}%)`;
 }
 
-function darkVariant({ h, s, l }: HslColor): string {
-    return `hsl(${h}, ${s}%, ${Math.max(15, l - 25)}%)`;
+/** 同色相明度的半透明版本，用于区分缓存命中色块 */
+function hslToAlphaString({ h, s, l }: HslColor, alpha: number): string {
+    return `hsla(${h}, ${s}%, ${l}%, ${alpha})`;
 }
 
-function lightVariant({ h, s, l }: HslColor): string {
-    // 浅色：降低饱和度 + 调高亮度
-    return `hsl(${h}, ${Math.round(s * 0.6)}%, ${Math.min(90, l + 15)}%)`;
+/** 将 HSL/HSLA 颜色字符串的亮度提升指定值，用于悬停高亮 */
+function brightenHsl(fill: string, amount: number = 15): string {
+    const match = fill.match(/^hsl(a?)\((\d+),\s*(\d+)%,\s*(\d+)%(?:,\s*([\d.]+))?\)$/i);
+    if (!match) return fill;
+    const hasAlpha = match[1] === 'a';
+    const h = parseInt(match[2], 10);
+    const s = parseInt(match[3], 10);
+    const l = parseInt(match[4], 10);
+    const alpha = match[5];
+    const newL = Math.min(90, l + amount);
+    if (hasAlpha && alpha !== undefined) {
+        return `hsla(${h}, ${s}%, ${newL}%, ${alpha})`;
+    }
+    return `hsl(${h}, ${s}%, ${newL}%)`;
 }
 
 // ==================== 工具函数 ====================
@@ -114,48 +125,78 @@ interface ComboInfo {
     modelName: string;
 }
 
-// ==================== 自定义 Tooltip ====================
+// ==================== Hover 状态类型 ====================
 
-function CustomTooltip({ active, payload, combos, t }: {
-    active?: boolean;
-    payload?: Array<{ payload: Record<string, number> }>;
-    combos: ComboInfo[];
+interface HoverInfo {
+    comboKey: string;
+    bucketIndex: number;
+    /** 鼠标触发时的视口 X 坐标，用于 fixed 定位 */
+    clientX: number;
+    clientY: number;
+}
+
+// ==================== 色块级悬浮 Tooltip ====================
+
+/** Tooltip 估计宽度，用于右边界翻转判断 */
+const ESTIMATED_TOOLTIP_WIDTH = 240;
+/** Tooltip 估计高度 */
+const ESTIMATED_TOOLTIP_HEIGHT = 150;
+
+function ComboTooltipOverlay({ hoverInfo, rechartsData, comboColors, t }: {
+    hoverInfo: HoverInfo | null;
+    rechartsData: Record<string, number | string>[];
+    comboColors: Array<ComboInfo & { color: HslColor }>;
     t: (key: string) => string;
 }) {
-    if (!active || !payload?.length) return null;
-    const data = payload[0].payload;
-    if (!data) return null;
+    if (!hoverInfo) return null;
+
+    const combo = comboColors.find(c => c.key === hoverInfo.comboKey);
+    if (!combo) return null;
+
+    const bucketData = rechartsData[hoverInfo.bucketIndex];
+    if (!bucketData) return null;
+
+    const missTokens = (bucketData[`${combo.key}-miss`] as number) || 0;
+    const hitTokens = (bucketData[`${combo.key}-hit`] as number) || 0;
+    const totalTokens = missTokens + hitTokens;
+    if (totalTokens === 0) return null;
+
+    const cacheHitRate = (hitTokens / totalTokens) * 100;
+    const inputTokens = (bucketData[`${combo.key}-input`] as number) || 0;
+    const outputTokens = (bucketData[`${combo.key}-output`] as number) || 0;
+    const callCount = (bucketData[`${combo.key}-calls`] as number) || 0;
+    const cost = (bucketData[`${combo.key}-cost`] as number) || 0;
+
+    // 智能方向翻转：右侧空间不够则向左显示，下方空间不够则向上显示
+    const viewportW = typeof window !== 'undefined' ? window.innerWidth : 1200;
+    const viewportH = typeof window !== 'undefined' ? window.innerHeight : 800;
+    const flipX = hoverInfo.clientX + ESTIMATED_TOOLTIP_WIDTH + 24 > viewportW;
+    const flipY = hoverInfo.clientY + ESTIMATED_TOOLTIP_HEIGHT + 24 > viewportH;
+
+    const left = flipX ? hoverInfo.clientX - ESTIMATED_TOOLTIP_WIDTH - 12 : hoverInfo.clientX + 12;
+    const top = flipY ? hoverInfo.clientY - ESTIMATED_TOOLTIP_HEIGHT - 12 : hoverInfo.clientY + 12;
 
     return (
-        <div className="border-border/50 bg-background grid gap-1.5 rounded-lg border px-3 py-2 text-xs shadow-xl max-w-xs">
-            {combos.map((combo) => {
-                const missTokens = (data[`${combo.key}-miss`] as number) || 0;
-                const hitTokens = (data[`${combo.key}-hit`] as number) || 0;
-                const totalTokens = missTokens + hitTokens;
-                if (totalTokens === 0) return null;
-
-                const cacheHitRate = (hitTokens / totalTokens) * 100;
-                const inputTokens = (data[`${combo.key}-input`] as number) || 0;
-                const outputTokens = (data[`${combo.key}-output`] as number) || 0;
-                const callCount = (data[`${combo.key}-calls`] as number) || 0;
-                const cost = (data[`${combo.key}-cost`] as number) || 0;
-
-                return (
-                    <div key={combo.key} className="border-b pb-1 last:border-0 last:pb-0">
-                        <div className="font-medium text-foreground mb-0.5">
-                            {combo.channelName} / {combo.modelName}
-                        </div>
-                        <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-muted-foreground">
-                            <span>{t('tooltip.inputTokens')}：</span><span className="text-right font-mono">{formatNumber(inputTokens)}</span>
-                            <span>{t('tooltip.outputTokens')}：</span><span className="text-right font-mono">{formatNumber(outputTokens)}</span>
-                            <span>{t('tooltip.cacheReadTokens')}：</span><span className="text-right font-mono">{formatNumber(hitTokens)}</span>
-                            <span>{t('tooltip.cacheHitRate')}：</span><span className="text-right font-mono">{cacheHitRate.toFixed(2)}%</span>
-                            <span>{t('tooltip.callCount')}：</span><span className="text-right font-mono">{formatNumber(callCount)}</span>
-                            <span>{t('tooltip.cost')}：</span><span className="text-right font-mono">${formatCost(cost)}</span>
-                        </div>
-                    </div>
-                );
-            })}
+        <div
+            className="border-border/50 bg-background grid gap-1.5 rounded-lg border px-3 py-2 text-xs shadow-xl max-w-xs pointer-events-none"
+            style={{
+                position: 'fixed',
+                left: `${left}px`,
+                top: `${top}px`,
+                zIndex: 999,
+            }}
+        >
+            <div className="font-medium text-foreground mb-0.5">
+                {combo.channelName} / {combo.modelName}
+            </div>
+            <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-muted-foreground">
+                <span>{t('tooltip.inputTokens')}：</span><span className="text-right font-mono">{formatNumber(inputTokens)}</span>
+                <span>{t('tooltip.outputTokens')}：</span><span className="text-right font-mono">{formatNumber(outputTokens)}</span>
+                <span>{t('tooltip.cacheReadTokens')}：</span><span className="text-right font-mono">{formatNumber(hitTokens)}</span>
+                <span>{t('tooltip.cacheHitRate')}：</span><span className="text-right font-mono">{cacheHitRate.toFixed(2)}%</span>
+                <span>{t('tooltip.callCount')}：</span><span className="text-right font-mono">{formatNumber(callCount)}</span>
+                <span>{t('tooltip.cost')}：</span><span className="text-right font-mono">${formatCost(cost)}</span>
+            </div>
         </div>
     );
 }
@@ -169,7 +210,7 @@ function CustomLegend({ combos }: { combos: Array<ComboInfo & { color: HslColor 
         <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 pt-3 pb-2">
             {combos.map((combo) => (
                 <div key={combo.key} className="flex items-center gap-1.5">
-                    <div className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: darkVariant(combo.color) }} />
+                    <div className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: hslToString(combo.color) }} />
                     <span className="text-xs text-muted-foreground">{combo.channelName} / {combo.modelName}</span>
                 </div>
             ))}
@@ -320,6 +361,59 @@ export function StatsQuery() {
         }
     }, [error]);
 
+    // ==================== 色块级 Hover 状态 ====================
+
+    const [hoverInfo, setHoverInfo] = useState<HoverInfo | null>(null);
+
+    /** 鼠标移入色块时记录 hover 信息，使用视口坐标用于 fixed 定位 */
+    const handleSegmentHover = useCallback(
+        (comboKey: string, bucketIndex: number, clientX: number, clientY: number) => {
+            setHoverInfo({
+                comboKey,
+                bucketIndex,
+                clientX,
+                clientY,
+            });
+        },
+        []
+    );
+
+    /** 鼠标移出色块时清除 hover */
+    const handleSegmentLeave = useCallback(() => {
+        setHoverInfo(null);
+    }, []);
+
+    /**
+     * 为 Bar 创建自定义 shape 渲染函数。
+     * 每个 shape 根据 hover 状态决定是否调亮显示，并绑定 mouse 事件。
+     */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const createSegmentShape: any = useCallback(
+        (comboKey: string, color: HslColor, isHit: boolean) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            return (props: any) => {
+                const idx: number = props.index;
+                const isHovered = hoverInfo?.comboKey === comboKey && hoverInfo?.bucketIndex === idx;
+                const baseFill = isHit ? hslToAlphaString(color, 0.75) : hslToString(color);
+                const displayFill = isHovered ? brightenHsl(baseFill) : baseFill;
+                const p = props as { x: number; y: number; width: number; height: number };
+                return (
+                    <rect
+                        x={p.x}
+                        y={p.y}
+                        width={p.width}
+                        height={Math.max(0, p.height)}
+                        fill={displayFill}
+                        style={{ cursor: 'pointer', transition: 'fill 0.15s' }}
+                        onMouseEnter={(e) => handleSegmentHover(comboKey, idx, e.clientX, e.clientY)}
+                        onMouseLeave={handleSegmentLeave}
+                    />
+                );
+            };
+        },
+        [hoverInfo, handleSegmentHover, handleSegmentLeave]
+    );
+
     const showEmpty = !querying && (!chartData?.buckets || allCombos.length === 0);
 
     return (
@@ -392,7 +486,7 @@ export function StatsQuery() {
                         {t('noData')}
                     </div>
                 ) : (
-                    <div className="h-72 w-full px-2">
+                    <div className="h-96 w-full px-2 relative">
                         <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={rechartsData} barCategoryGap="15%">
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -404,27 +498,32 @@ export function StatsQuery() {
                                     interval={xAxisInterval}
                                 />
                                 <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 11 }} tickFormatter={formatNumber} />
-                                <Tooltip content={<CustomTooltip combos={comboColors} t={t} />} cursor={{ fill: 'hsl(var(--muted-foreground) / 0.1)' }} />
                                 {comboColors.map((combo) => (
                                     <Fragment key={combo.key}>
                                         <Bar
                                             dataKey={`${combo.key}-miss`}
                                             stackId="a"
-                                            fill={darkVariant(combo.color)}
                                             isAnimationActive={false}
-                                            activeBar={{ fill: hslToString(combo.color) }}
+                                            shape={createSegmentShape(combo.key, combo.color, false)}
                                         />
                                         <Bar
                                             dataKey={`${combo.key}-hit`}
                                             stackId="a"
-                                            fill={lightVariant(combo.color)}
                                             isAnimationActive={false}
-                                            activeBar={{ fill: hslToString(combo.color) }}
+                                            shape={createSegmentShape(combo.key, combo.color, true)}
                                         />
                                     </Fragment>
                                 ))}
                             </BarChart>
                         </ResponsiveContainer>
+
+                        {/* 色块级悬浮 Tooltip */}
+                        <ComboTooltipOverlay
+                            hoverInfo={hoverInfo}
+                            rechartsData={rechartsData}
+                            comboColors={comboColors}
+                            t={t}
+                        />
                     </div>
                 )}
 

@@ -105,6 +105,7 @@ function DateTimePicker({ value, onChange, className }: DateTimePickerProps) {
             onFocus={() => setDateOpen(true)}
             onBlur={() => {
               commitDateText()
+              setDateOpen(false)
             }}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
@@ -138,6 +139,7 @@ function DateTimePicker({ value, onChange, className }: DateTimePickerProps) {
               setDateOpen(false)
             }}
             defaultMonth={calendarSelected}
+            classNames={{ today: '' }}
           />
           </div>
         </PopoverContent>
@@ -154,6 +156,7 @@ function DateTimePicker({ value, onChange, className }: DateTimePickerProps) {
             onFocus={() => setHourOpen(true)}
             onBlur={() => {
               commitHourText()
+              setHourOpen(false)
             }}
             onKeyDown={(e) => {
               if (e.key === "Enter") {

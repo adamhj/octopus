@@ -25,20 +25,15 @@ export interface SearchableSelectProps {
 }
 
 /**
- * 可搜索下拉框 — 输入框即筛选框。
- * 用户输入时过滤下拉选项，选中后显示 label，右侧有清除按钮。
+ * 可搜索下拉框。
+ * 文本框内容完全由本地 inputText 驱动；自定义输入跨聚焦保持。
+ * onChange 仅在点击候选项或键盘回车时被调用；失焦/关闭弹窗不触发 onChange。
+ * 支持键盘上下导航和回车选择。
  */
 export function SearchableSelect({ value, onChange, options, placeholder, className, noMatchText }: SearchableSelectProps) {
     const [open, setOpen] = useState(false);
-    const [inputText, setInputText] = useState('');
-
-    const selectedLabel = useMemo(
-        () => options.find((o) => o.value === value)?.label || '',
-        [options, value]
-    );
-
-    // 下拉框打开时显示用户输入；关闭时显示已选 label
-    const displayText = open ? inputText : (value ? selectedLabel : '');
+    const [inputText, setInputText] = useState(value);
+    const [highlightIndex, setHighlightIndex] = useState(-1);
 
     const filtered = useMemo(() => {
         const s = inputText.toLowerCase();
@@ -48,19 +43,21 @@ export function SearchableSelect({ value, onChange, options, placeholder, classN
         );
     }, [options, inputText]);
 
-    const handleFocus = useCallback(() => {
-        setInputText('');
-        setOpen(true);
-    }, []);
-
-    const handleSelect = useCallback(
-        (optValue: string) => {
-            onChange(optValue === value ? '' : optValue);
-            setInputText('');
+    /** 选择候选项：调用 onChange 并同步 inputText 为候选项 label */
+    const commitSelection = useCallback(
+        (opt: SearchableSelectOption) => {
+            onChange(opt.value);
+            setInputText(opt.label);
             setOpen(false);
+            setHighlightIndex(-1);
         },
-        [value, onChange]
+        [onChange]
     );
+
+    const handleFocus = useCallback(() => {
+        setOpen(true);
+        setHighlightIndex(-1);
+    }, []);
 
     const handleClear = useCallback(
         (e: React.MouseEvent) => {
@@ -69,8 +66,39 @@ export function SearchableSelect({ value, onChange, options, placeholder, classN
             onChange('');
             setInputText('');
             setOpen(false);
+            setHighlightIndex(-1);
         },
         [onChange]
+    );
+
+    const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+        setInputText(e.target.value);
+        setOpen(true);
+        setHighlightIndex(-1);
+    }, []);
+
+    /** 键盘交互：上下导航、回车选择、Esc 关闭 */
+    const handleKeyDown = useCallback(
+        (e: React.KeyboardEvent) => {
+            if (!open || filtered.length === 0) return;
+
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setHighlightIndex((prev) => (prev < filtered.length - 1 ? prev + 1 : 0));
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setHighlightIndex((prev) => (prev > 0 ? prev - 1 : filtered.length - 1));
+            } else if (e.key === 'Enter') {
+                if (highlightIndex >= 0 && highlightIndex < filtered.length) {
+                    e.preventDefault();
+                    commitSelection(filtered[highlightIndex]);
+                }
+            } else if (e.key === 'Escape') {
+                setOpen(false);
+                setHighlightIndex(-1);
+            }
+        },
+        [open, filtered, highlightIndex, commitSelection]
     );
 
     return (
@@ -81,21 +109,16 @@ export function SearchableSelect({ value, onChange, options, placeholder, classN
                         role="combobox"
                         aria-expanded={open}
                         placeholder={placeholder}
-                        value={displayText}
-                        onChange={(e) => {
-                            setInputText(e.target.value);
-                            setOpen(true);
-                            if (e.target.value === '' && value) {
-                                onChange('');
-                            }
-                        }}
+                        value={inputText}
+                        onChange={handleInputChange}
                         onFocus={handleFocus}
                         onBlur={() => {
                             setTimeout(() => {
                                 setOpen(false);
-                                setInputText('');
+                                setHighlightIndex(-1);
                             }, BLUR_CLOSE_DELAY_MS);
                         }}
+                        onKeyDown={handleKeyDown}
                         className={cn('w-full pr-8', className)}
                     />
                 </PopoverAnchor>
@@ -123,16 +146,19 @@ export function SearchableSelect({ value, onChange, options, placeholder, classN
                 onOpenAutoFocus={(e) => e.preventDefault()}
             >
                 <div className="flex flex-col max-h-48 overflow-y-auto">
-                    {filtered.map((opt) => (
+                    {filtered.map((opt, idx) => (
                         <button
                             key={opt.value}
                             type="button"
                             className={cn(
-                                'rounded-sm px-2 py-1.5 text-sm text-left whitespace-nowrap hover:bg-accent hover:text-accent-foreground',
-                                value === opt.value && 'bg-accent text-accent-foreground'
+                                'rounded-sm px-2 py-1.5 text-sm text-left whitespace-nowrap',
+                                (value === opt.value || idx === highlightIndex)
+                                    ? 'bg-accent text-accent-foreground'
+                                    : 'hover:bg-accent hover:text-accent-foreground'
                             )}
                             onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => handleSelect(opt.value)}
+                            onClick={() => commitSelection(opt)}
+                            onMouseEnter={() => setHighlightIndex(idx)}
                         >
                             {opt.label}
                         </button>
