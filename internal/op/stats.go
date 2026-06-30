@@ -102,7 +102,6 @@ func StatsSaveDB(ctx context.Context) error {
 	for _, v := range statsDetailCache {
 		statsDetailSnap = append(statsDetailSnap, *v)
 	}
-	statsDetailCache = make(map[string]*model.StatsDetail)
 	statsDetailCacheLock.Unlock()
 
 	return persistStatsSnapshots(ctx, totalSnap, dailySnap, hourlyAll, channelIDs, modelIDs, apiKeyIDs, statsDetailSnap)
@@ -236,7 +235,6 @@ func statsSaveDBWithDailyOverride(ctx context.Context, dailyOverride model.Stats
 	for _, v := range statsDetailCache {
 		statsDetailSnap = append(statsDetailSnap, *v)
 	}
-	statsDetailCache = make(map[string]*model.StatsDetail)
 	statsDetailCacheLock.Unlock()
 
 	return persistStatsSnapshots(ctx, totalSnap, dailyOverride, hourlyAll, channelIDs, modelIDs, apiKeyIDs, statsDetailSnap)
