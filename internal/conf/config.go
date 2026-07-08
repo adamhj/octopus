@@ -23,10 +23,19 @@ type Database struct {
 	Path string `mapstructure:"path"`
 }
 
+// Relay 配置中继（转发到上游服务）相关的选项。
+type Relay struct {
+	// SkipSSLVerify 控制访问上游 URL 时是否跳过 SSL 证书校验。
+	// 主要用于配合中间人代理抓包调试的场景：开启后将不校验上游 TLS 证书有效性。
+	// 默认关闭，生产环境应保持关闭以确保连接安全。
+	SkipSSLVerify bool `mapstructure:"skip_ssl_verify"`
+}
+
 type Config struct {
 	Server   Server   `mapstructure:"server"`
 	Log      Log      `mapstructure:"log"`
 	Database Database `mapstructure:"database"`
+	Relay    Relay    `mapstructure:"relay"`
 }
 
 var AppConfig Config
@@ -74,4 +83,5 @@ func setDefaults() {
 	viper.SetDefault("database.type", "sqlite")
 	viper.SetDefault("database.path", "data/data.db")
 	viper.SetDefault("log.level", "info")
+	viper.SetDefault("relay.skip_ssl_verify", false)
 }
