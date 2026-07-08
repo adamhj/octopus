@@ -182,3 +182,72 @@ export function useStatsAPIKey() {
         refetchOnMount: 'always',
     });
 }
+
+// ==================== 图表 API ====================
+
+/** 图表 API 响应 - 按 channel_id + actual_model_name 聚合的统计槽位 */
+export interface StatsChartSlot {
+    channel_id: number;
+    channel_name: string;
+    actual_model_name: string;
+    input_token: number;
+    output_token: number;
+    cache_read_tokens: number;
+    api_call_count: number;
+    input_cost: number;
+    output_cost: number;
+}
+
+/** 图表 API 响应 - 单个时间桶 */
+export interface StatsChartBucket {
+    time: string;
+    slots: StatsChartSlot[];
+}
+
+/** 图表 API 响应 - 完整结果 */
+export interface StatsChartResult {
+    period: string;
+    buckets: StatsChartBucket[];
+}
+
+/**
+ * 获取图表统计数据 Hook
+ * 按指定的聚合周期返回分桶统计数据。
+ *
+ * @param params.startTime 开始时间，格式 "YYYY-MM-DD HH:00"
+ * @param params.endTime 结束时间，格式 "YYYY-MM-DD HH:00"
+ * @param params.period 聚合周期: hour / day / week / month
+ * @param params.channelId 可选渠道 ID
+ * @param params.model 可选上游实际模型名
+ */
+export function useStatsDetailChart(params: {
+    startTime: string;
+    endTime: string;
+    period: string;
+    channelId?: number;
+    model?: string;
+    /** 缓存破坏版本号，不发送到 API，仅用于 queryKey */
+    _version?: number;
+}) {
+    // 当参数不完整时不发起请求
+    const enabled = params.startTime !== '' && params.endTime !== '' && params.period !== '';
+
+    return useQuery({
+        queryKey: ['stats', 'detail', 'chart', params],
+        queryFn: async () => {
+            const queryParams: Record<string, string | number | boolean> = {
+                start_time: params.startTime,
+                end_time: params.endTime,
+                period: params.period,
+            };
+            if (params.channelId !== undefined) {
+                queryParams.channel_id = params.channelId;
+            }
+            if (params.model !== undefined && params.model !== '') {
+                queryParams.model = params.model;
+            }
+            return apiClient.get<StatsChartResult>('/api/v1/stats/detail/chart', queryParams);
+        },
+        enabled,
+    });
+}

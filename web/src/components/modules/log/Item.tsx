@@ -258,7 +258,10 @@ export function LogCard({ log }: { log: RelayLog }) {
                                 </div>
                                 <div className="flex items-center gap-1.5">
                                     <ArrowDownToLine className="size-3.5 shrink-0 text-green-500" />
-                                    <span>{t('input')} {log.input_tokens.toLocaleString()}</span>
+                                    <span>
+                                        {t('input')} {log.input_tokens.toLocaleString()}
+                                        {log.cache_read_tokens > 0 && ` (${log.cache_read_tokens.toLocaleString()})`}
+                                    </span>
                                 </div>
                                 <div className="flex items-center gap-1.5">
                                     <ArrowUpFromLine className="size-3.5 shrink-0 text-purple-500" />
@@ -428,7 +431,9 @@ export function LogCard({ log }: { log: RelayLog }) {
                                                 <Send className="size-4 text-green-500" />
                                                 <span className="text-sm font-medium text-card-foreground">{t('requestContent')}</span>
                                                 <Badge variant="secondary" className="ml-auto text-xs">
-                                                    {log.input_tokens.toLocaleString()} {t('tokens')}
+                                                    {log.input_tokens.toLocaleString()}
+                                                    {log.cache_read_tokens > 0 && ` (${log.cache_read_tokens.toLocaleString()})`}
+                                                    {' '}{t('tokens')}
                                                 </Badge>
                                             </div>
                                             <div className="flex-1 overflow-auto min-h-0">

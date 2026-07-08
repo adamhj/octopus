@@ -139,6 +139,21 @@ export function AppContainer() {
                             );
                             break;
                         }
+                        case 'stats-query': {
+                            prefetches.push(
+                                queryClient.prefetchQuery({
+                                    queryKey: ['channels', 'list'],
+                                    queryFn: async () => apiClient.get('/api/v1/channel/list'),
+                                })
+                            );
+                            prefetches.push(
+                                queryClient.prefetchQuery({
+                                    queryKey: ['models', 'list'],
+                                    queryFn: async () => apiClient.get('/api/v1/model/list'),
+                                })
+                            );
+                            break;
+                        }
                         case 'setting': {
                             prefetches.push(
                                 queryClient.prefetchQuery({

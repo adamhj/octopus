@@ -52,6 +52,22 @@ export function useModelList() {
 }
 
 /**
+ * 获取模型下拉选项（无轮询版本）
+ * 用于下拉选择等无需实时更新的场景，共享 ['models', 'list'] 缓存。
+ */
+export function useModelOptions() {
+    return useQuery({
+        queryKey: ['models', 'list'],
+        queryFn: async () => {
+            return apiClient.get<LLMInfo[]>('/api/v1/model/list');
+        },
+        staleTime: 5 * 60 * 1000,
+        refetchOnMount: 'always',
+        refetchOnWindowFocus: false,
+    });
+}
+
+/**
  * 获取 LLM 模型与渠道关联列表 Hook
  * 
  * @example

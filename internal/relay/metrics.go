@@ -32,6 +32,9 @@ type RelayMetrics struct {
 	ActualModel string
 	Stats       model.StatsMetrics
 
+	// 缓存 Token 分项
+	CacheReadTokens int64 // 缓存读取 Token 数（命中服务端缓存）
+
 	// 参数覆盖
 	ParamOverride string
 }
@@ -78,6 +81,9 @@ func (m *RelayMetrics) SetInternalResponse(resp *transformerModel.InternalLLMRes
 		m.Stats.InputCost = (float64(usage.PromptTokensDetails.CachedTokens)*modelPrice.CacheRead + float64(usage.PromptTokens-usage.PromptTokensDetails.CachedTokens)*modelPrice.Input) * 1e-6
 	}
 	m.Stats.OutputCost = float64(usage.CompletionTokens) * modelPrice.Output * 1e-6
+
+	// 提取缓存读取 Token 数，供 StatsDetail 和 RelayLog 记录
+	m.CacheReadTokens = usage.PromptTokensDetails.CachedTokens
 }
 
 func (m *RelayMetrics) Save(ctx context.Context, success bool, err error, attempts []model.ChannelAttempt) {
@@ -102,6 +108,21 @@ func (m *RelayMetrics) Save(ctx context.Context, success bool, err error, attemp
 	op.StatsDailyUpdate(context.Background(), globalStats)
 	op.StatsAPIKeyUpdate(m.APIKeyID, globalStats)
 	op.StatsChannelUpdate(channelID, globalStats)
+
+	// 明细统计：按日期+小时+渠道+上游实际模型名交叉聚合，同时记录缓存 Token 分项
+	actualModel := m.ActualModel
+	if actualModel == "" {
+		actualModel = m.RequestModel
+	}
+	now := time.Now()
+	op.StatsDetailUpdate(
+		now.Format("20060102"),
+		now.Hour(),
+		channelID,
+		actualModel,
+		globalStats,
+		m.CacheReadTokens,
+	)
 
 	log.Infof("relay complete: model=%s, channel=%d(%s), success=%t, duration=%dms, input_token=%d, output_token=%d, input_cost=%f, output_cost=%f, total_cost=%f, attempts=%d",
 		m.RequestModel, channelID, channelName, success, duration.Milliseconds(),
@@ -143,6 +164,7 @@ func (m *RelayMetrics) saveLog(ctx context.Context, err error, duration time.Dur
 		UseTime:          int(duration.Milliseconds()),
 		Attempts:         attempts,
 		TotalAttempts:    len(attempts),
+		CacheReadTokens:  m.CacheReadTokens,
 	}
 
 	if apiKey, getErr := op.APIKeyGet(m.APIKeyID, ctx); getErr == nil {

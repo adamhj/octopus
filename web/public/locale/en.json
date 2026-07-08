@@ -50,6 +50,7 @@
         "key": "Key",
         "model": "Price",
         "log": "Log",
+        "stats-query": "Stats Query",
         "setting": "Setting"
     },
     "toolbar": {
@@ -138,6 +139,40 @@
             "sortByTokens": "Tokens",
             "noData": "No ranking data",
             "successRate": "Success Rate"
+        }
+    },
+    "statsQuery": {
+        "title": "Usage Query",
+        "startTime": "Start Time",
+        "endTime": "End Time",
+        "channel": "Channel",
+        "channelPlaceholder": "All channels",
+        "model": "Model",
+        "modelPlaceholder": "All models",
+        "period": {
+            "label": "Period",
+            "hour": "Hourly",
+            "day": "Daily",
+            "week": "Weekly",
+            "month": "Monthly"
+        },
+        "query": "Query",
+        "querying": "Querying...",
+        "chartTitle": "Usage Chart",
+        "noData": "No data available for the selected period",
+        "searchNoMatch": "No matching results",
+        "tooltip": {
+            "inputTokens": "Input Tokens",
+            "outputTokens": "Output Tokens",
+            "cacheReadTokens": "Cache Read Tokens",
+            "cacheHitRate": "Cache Hit Rate",
+            "callCount": "Call Count",
+            "cost": "Cost"
+        },
+        "channelFallback": "Channel {id}",
+        "error": {
+            "startAfterEnd": "Start time must be before end time",
+            "apiError": "API request failed"
         }
     },
     "setting": {
