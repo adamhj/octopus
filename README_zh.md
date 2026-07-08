@@ -109,6 +109,9 @@ http://localhost:3000
   },
   "log": {
     "level": "info"
+  },
+  "relay": {
+    "skip_ssl_verify": false
   }
 }
 ```
@@ -122,6 +125,7 @@ http://localhost:3000
 | `database.type` | 数据库类型 | `sqlite` |
 | `database.path` | 数据库连接地址 | `data/data.db` |
 | `log.level` | 日志级别 | `info` |
+| `relay.skip_ssl_verify` | 访问上游 URL 时是否跳过 SSL 证书校验，用于配合中间人代理抓包调试 | `false` |
 
 **数据库配置：**
 
@@ -168,6 +172,7 @@ http://localhost:3000
 | `OCTOPUS_DATABASE_TYPE` | `database.type` |
 | `OCTOPUS_DATABASE_PATH` | `database.path` |
 | `OCTOPUS_LOG_LEVEL` | `log.level` |
+| `OCTOPUS_RELAY_SKIP_SSL_VERIFY` | 访问上游 URL 时跳过 SSL 证书校验(可选，默认 `false`) |
 | `OCTOPUS_GITHUB_PAT` | 用于获取最新版本时的速率限制(可选) |
 | `OCTOPUS_RELAY_MAX_SSE_EVENT_SIZE` | 最大 SSE 事件大小(可选) |
 | `OCTOPUS_IMAGES_BODY_MEMORY_THRESHOLD_MB` | Images 请求体内存缓存阈值，超过阈值会落盘临时文件(可选，默认 16) |

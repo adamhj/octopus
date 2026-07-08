@@ -2,12 +2,14 @@ package client
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"net/http"
 	"net/url"
 	"sync"
 
+	"github.com/bestruirui/octopus/internal/conf"
 	"github.com/bestruirui/octopus/internal/model"
 	"github.com/bestruirui/octopus/internal/op"
 	"golang.org/x/net/proxy"
@@ -92,7 +94,19 @@ func clonedDefaultTransport() (*http.Transport, error) {
 	if !ok {
 		return nil, fmt.Errorf("default transport is not *http.Transport")
 	}
-	return transport.Clone(), nil
+	cloned := transport.Clone()
+
+	// 当开启跳过 SSL 证书校验时，对所有出站 HTTPS 请求禁用证书验证。
+	// 主要用于配合中间人代理进行抓包调试：代理会替换上游 TLS 证书，
+	// 若不跳过校验将导致连接失败。默认关闭，生产环境应保持关闭。
+	if conf.AppConfig.Relay.SkipSSLVerify {
+		if cloned.TLSClientConfig == nil {
+			cloned.TLSClientConfig = &tls.Config{}
+		}
+		cloned.TLSClientConfig.InsecureSkipVerify = true
+	}
+
+	return cloned, nil
 }
 
 func newHTTPClientNoProxy() (*http.Client, error) {
