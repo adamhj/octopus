@@ -30,42 +30,35 @@ import { useChannelOptions } from '@/api/endpoints/channel';
 import { useModelOptions } from '@/api/endpoints/model';
 import { logger } from '@/lib/logger';
 
-// ==================== HSL 调色板 ====================
+// ==================== 系列色板（低彩度分类色） ====================
 
-interface HslColor {
-    h: number;
-    s: number;
-    l: number;
-}
+/**
+ * 跨色相、中低彩度分类色。
+ * 主题 chart-1..5 是同一绿相上的明度阶梯，多系列几乎不可辨，故不用其循环。
+ * 首色仍贴近主题绿（hue≈145），其余在色环上拉开，chroma 控制在「不刺眼」区间。
+ */
+const SERIES_PALETTE = [
+    'oklch(0.62 0.10 145)', // 绿（贴 primary）
+    'oklch(0.58 0.09 250)', // 蓝
+    'oklch(0.62 0.09 50)',  // 暖琥珀
+    'oklch(0.58 0.09 310)', // 紫
+    'oklch(0.60 0.08 200)', // 青
+    'oklch(0.58 0.09 25)',  // 赭红
+    'oklch(0.56 0.08 170)', // 青绿
+    'oklch(0.60 0.08 280)', // 靛
+] as const;
 
-function hslColor(index: number, total: number, saturation: number, lightness: number): HslColor {
-    const hue = Math.round((index / Math.max(total, 1)) * 360);
-    return { h: hue, s: saturation, l: lightness };
-}
+/** 缓存命中块透明度（低彩度下略提高，避免与背景糊在一起） */
+const CACHE_HIT_OPACITY = 0.7;
 
-function hslToString({ h, s, l }: HslColor): string {
-    return `hsl(${h}, ${s}%, ${l}%)`;
-}
-
-/** 同色相明度的半透明版本，用于区分缓存命中色块 */
-function hslToAlphaString({ h, s, l }: HslColor, alpha: number): string {
-    return `hsla(${h}, ${s}%, ${l}%, ${alpha})`;
-}
-
-/** 将 HSL/HSLA 颜色字符串的亮度提升指定值，用于悬停高亮 */
-function brightenHsl(fill: string, amount: number = 15): string {
-    const match = fill.match(/^hsl(a?)\((\d+),\s*(\d+)%,\s*(\d+)%(?:,\s*([\d.]+))?\)$/i);
-    if (!match) return fill;
-    const hasAlpha = match[1] === 'a';
-    const h = parseInt(match[2], 10);
-    const s = parseInt(match[3], 10);
-    const l = parseInt(match[4], 10);
-    const alpha = match[5];
-    const newL = Math.min(90, l + amount);
-    if (hasAlpha && alpha !== undefined) {
-        return `hsla(${h}, ${s}%, ${newL}%, ${alpha})`;
-    }
-    return `hsl(${h}, ${s}%, ${newL}%)`;
+/**
+ * 按系列序号取色：先走跨色相色板；
+ * 超出后用 color-mix 与 muted 混合，形成低艳度第二圈。
+ */
+function seriesFill(index: number): string {
+    const base = SERIES_PALETTE[index % SERIES_PALETTE.length];
+    if (index < SERIES_PALETTE.length) return base;
+    return `color-mix(in oklch, ${base} 65%, var(--muted) 35%)`;
 }
 
 // ==================== 工具函数 ====================
@@ -145,7 +138,7 @@ const ESTIMATED_TOOLTIP_HEIGHT = 150;
 function ComboTooltipOverlay({ hoverInfo, rechartsData, comboColors, t }: {
     hoverInfo: HoverInfo | null;
     rechartsData: Record<string, number | string>[];
-    comboColors: Array<ComboInfo & { color: HslColor }>;
+    comboColors: Array<ComboInfo & { fill: string }>;
     t: (key: string) => string;
 }) {
     if (!hoverInfo) return null;
@@ -203,14 +196,14 @@ function ComboTooltipOverlay({ hoverInfo, rechartsData, comboColors, t }: {
 
 // ==================== 图例 ====================
 
-function CustomLegend({ combos }: { combos: Array<ComboInfo & { color: HslColor }> }) {
+function CustomLegend({ combos }: { combos: Array<ComboInfo & { fill: string }> }) {
     if (combos.length === 0) return null;
 
     return (
         <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 pt-3 pb-2">
             {combos.map((combo) => (
                 <div key={combo.key} className="flex items-center gap-1.5">
-                    <div className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: hslToString(combo.color) }} />
+                    <div className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: combo.fill }} />
                     <span className="text-xs text-muted-foreground">{combo.channelName} / {combo.modelName}</span>
                 </div>
             ))}
@@ -297,7 +290,7 @@ export function StatsQuery() {
     const comboColors = useMemo(() => {
         return allCombos.map((combo, i) => ({
             ...combo,
-            color: hslColor(i, allCombos.length, 55, 45),
+            fill: seriesFill(i),
         }));
     }, [allCombos]);
 
@@ -385,17 +378,15 @@ export function StatsQuery() {
 
     /**
      * 为 Bar 创建自定义 shape 渲染函数。
-     * 每个 shape 根据 hover 状态决定是否调亮显示，并绑定 mouse 事件。
+     * hover 用 CSS filter brightness，不改 fill 字符串、无描边。
      */
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const createSegmentShape: any = useCallback(
-        (comboKey: string, color: HslColor, isHit: boolean) => {
+        (comboKey: string, fill: string, isHit: boolean) => {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             return (props: any) => {
                 const idx: number = props.index;
                 const isHovered = hoverInfo?.comboKey === comboKey && hoverInfo?.bucketIndex === idx;
-                const baseFill = isHit ? hslToAlphaString(color, 0.75) : hslToString(color);
-                const displayFill = isHovered ? brightenHsl(baseFill) : baseFill;
                 const p = props as { x: number; y: number; width: number; height: number };
                 return (
                     <rect
@@ -403,8 +394,13 @@ export function StatsQuery() {
                         y={p.y}
                         width={p.width}
                         height={Math.max(0, p.height)}
-                        fill={displayFill}
-                        style={{ cursor: 'pointer', transition: 'fill 0.15s' }}
+                        fill={fill}
+                        opacity={isHit ? CACHE_HIT_OPACITY : 1}
+                        style={{
+                            cursor: 'pointer',
+                            transition: 'filter 0.15s',
+                            filter: isHovered ? 'brightness(1.15)' : undefined,
+                        }}
                         onMouseEnter={(e) => handleSegmentHover(comboKey, idx, e.clientX, e.clientY)}
                         onMouseLeave={handleSegmentLeave}
                     />
@@ -423,11 +419,11 @@ export function StatsQuery() {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     <div className="space-y-1.5">
                         <Label className="text-xs text-muted-foreground">{t('startTime')}</Label>
-                        <DateTimePicker value={formStartTime} onChange={setFormStartTime} className="w-full" />
+                        <DateTimePicker value={formStartTime} onChange={setFormStartTime} />
                     </div>
                     <div className="space-y-1.5">
                         <Label className="text-xs text-muted-foreground">{t('endTime')}</Label>
-                        <DateTimePicker value={formEndTime} onChange={setFormEndTime} className="w-full" />
+                        <DateTimePicker value={formEndTime} onChange={setFormEndTime} />
                     </div>
                     <div className="space-y-1.5">
                         <Label className="text-xs text-muted-foreground">{t('period.label')}</Label>
@@ -504,13 +500,13 @@ export function StatsQuery() {
                                             dataKey={`${combo.key}-miss`}
                                             stackId="a"
                                             isAnimationActive={false}
-                                            shape={createSegmentShape(combo.key, combo.color, false)}
+                                            shape={createSegmentShape(combo.key, combo.fill, false)}
                                         />
                                         <Bar
                                             dataKey={`${combo.key}-hit`}
                                             stackId="a"
                                             isAnimationActive={false}
-                                            shape={createSegmentShape(combo.key, combo.color, true)}
+                                            shape={createSegmentShape(combo.key, combo.fill, true)}
                                         />
                                     </Fragment>
                                 ))}
