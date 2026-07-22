@@ -43,17 +43,26 @@ function parseHourText(text: string): number | null {
   return n
 }
 
+/** 小时显示两位补零 */
+function formatHourText(hour: number): string {
+  return clampHour(hour).toString().padStart(2, "0")
+}
+
+/** 连体组内 Input：去掉独立边框/ring，高度交给外层 */
+const segmentInputClass =
+  "h-full rounded-none border-0 bg-transparent shadow-none focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent"
+
 function DateTimePicker({ value, onChange, className }: DateTimePickerProps) {
   const valueDay = dayjs(value)
   const [dateOpen, setDateOpen] = React.useState(false)
   const [hourOpen, setHourOpen] = React.useState(false)
   const [dateText, setDateText] = React.useState(() => valueDay.format(DATE_FORMAT))
-  const [hourText, setHourText] = React.useState(() => String(valueDay.hour()))
+  const [hourText, setHourText] = React.useState(() => formatHourText(valueDay.hour()))
 
   React.useEffect(() => {
     const d = dayjs(value)
     setDateText(d.format(DATE_FORMAT))
-    setHourText(String(d.hour()))
+    setHourText(formatHourText(d.hour()))
   }, [value])
 
   const emitChange = React.useCallback(
@@ -77,11 +86,10 @@ function DateTimePicker({ value, onChange, className }: DateTimePickerProps) {
   const commitHourText = React.useCallback(() => {
     const hour = parseHourText(hourText)
     if (hour !== null) {
-      const normalized = String(hour)
-      setHourText(normalized)
+      setHourText(formatHourText(hour))
       emitChange(value, hour)
     } else {
-      setHourText(String(dayjs(value).hour()))
+      setHourText(formatHourText(dayjs(value).hour()))
     }
   }, [hourText, value, emitChange])
 
@@ -92,14 +100,25 @@ function DateTimePicker({ value, onChange, className }: DateTimePickerProps) {
 
   return (
     <div
-      className={cn("flex items-center gap-2", className)}
+      className={cn(
+        "inline-flex h-9 shrink-0 items-stretch overflow-hidden rounded-md border border-input bg-transparent shadow-xs",
+        "transition-[color,box-shadow] outline-none",
+        "focus-within:border-ring focus-within:ring-ring/50 focus-within:ring-[3px]",
+        "dark:bg-input/30",
+        className,
+        // 固定总宽：日期 7.5rem + 小时 2.25rem + H 1.75rem；放在 className 之后避免 w-full 拉满
+        "w-[11.5rem]"
+      )}
       data-slot="datetime-picker"
     >
       <Popover open={dateOpen} onOpenChange={setDateOpen} modal={false}>
         <PopoverAnchor asChild>
           <Input
             aria-label="Date"
-            className="w-[9.5rem] font-mono tabular-nums"
+            className={cn(
+              segmentInputClass,
+              "w-[7.5rem] px-2 font-mono tabular-nums text-center md:text-sm"
+            )}
             value={dateText}
             onChange={(e) => setDateText(e.target.value)}
             onFocus={() => setDateOpen(true)}
@@ -128,19 +147,19 @@ function DateTimePicker({ value, onChange, className }: DateTimePickerProps) {
           }}
         >
           <div onMouseDown={(e) => e.preventDefault()}>
-          <Calendar
-            mode="single"
-            selected={calendarSelected}
-            onSelect={(d) => {
-              if (!d) return
-              const hour = parseHourText(hourText) ?? dayjs(value).hour()
-              setDateText(dayjs(d).format(DATE_FORMAT))
-              emitChange(d, hour)
-              setDateOpen(false)
-            }}
-            defaultMonth={calendarSelected}
-            classNames={{ today: '' }}
-          />
+            <Calendar
+              mode="single"
+              selected={calendarSelected}
+              onSelect={(d) => {
+                if (!d) return
+                const hour = parseHourText(hourText) ?? dayjs(value).hour()
+                setDateText(dayjs(d).format(DATE_FORMAT))
+                emitChange(d, hour)
+                setDateOpen(false)
+              }}
+              defaultMonth={calendarSelected}
+              classNames={{ today: "" }}
+            />
           </div>
         </PopoverContent>
       </Popover>
@@ -149,7 +168,10 @@ function DateTimePicker({ value, onChange, className }: DateTimePickerProps) {
         <PopoverAnchor asChild>
           <Input
             aria-label="Hour"
-            className="w-[3.25rem] font-mono tabular-nums text-center"
+            className={cn(
+              segmentInputClass,
+              "w-9 border-l border-input px-0.5 font-mono tabular-nums text-center md:text-sm"
+            )}
             inputMode="numeric"
             value={hourText}
             onChange={(e) => setHourText(e.target.value)}
@@ -196,18 +218,26 @@ function DateTimePicker({ value, onChange, className }: DateTimePickerProps) {
                   )}
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => {
-                    setHourText(String(h))
+                    setHourText(formatHourText(h))
                     emitChange(value, h)
                     setHourOpen(false)
                   }}
                 >
-                  {h.toString().padStart(2, "0")}
+                  {formatHourText(h)}
                 </button>
               </li>
             ))}
           </ul>
         </PopoverContent>
       </Popover>
+
+      {/* 小时单位标记：不可聚焦，固定文案 H */}
+      <span
+        aria-hidden="true"
+        className="flex w-7 shrink-0 select-none items-center justify-center border-l border-input text-xs font-medium text-muted-foreground"
+      >
+        H
+      </span>
     </div>
   )
 }
