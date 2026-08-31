@@ -391,16 +391,6 @@ func (r *InternalLLMRequest) IsChatRequest() bool {
 	return len(r.Messages) > 0
 }
 
-func (r *InternalLLMRequest) ClearHelpFields() {
-	for i, msg := range r.Messages {
-		msg.ClearHelpFields()
-		r.Messages[i] = msg
-	}
-
-	r.ExtraBody = nil
-	r.Include = nil
-}
-
 func (r *InternalLLMRequest) IsImageGenerationRequest() bool {
 	return len(r.Modalities) > 0 && slices.Contains(r.Modalities, "image")
 }
@@ -506,12 +496,6 @@ type Message struct {
 	// CacheControl is used for provider-specific cache control (e.g., Anthropic).
 	// This field is not serialized in JSON.
 	CacheControl *CacheControl `json:"-"`
-}
-
-func (m *Message) ClearHelpFields() {
-	m.ReasoningContent = nil
-	m.Reasoning = nil
-	m.ReasoningSignature = nil
 }
 
 // GetReasoningContent returns the reasoning content from either ReasoningContent or Reasoning field.
@@ -675,19 +659,6 @@ type InternalLLMResponse struct {
 	Error *ResponseError `json:"error,omitempty"`
 }
 
-func (r *InternalLLMResponse) ClearHelpFields() {
-	for i, choice := range r.Choices {
-		if choice.Message != nil {
-			choice.Message.ClearHelpFields()
-		}
-
-		if choice.Delta != nil {
-			choice.Delta.ClearHelpFields()
-		}
-
-		r.Choices[i] = choice
-	}
-}
 
 // IsEmbeddingResponse returns true if this is an embedding response.
 func (r *InternalLLMResponse) IsEmbeddingResponse() bool {
