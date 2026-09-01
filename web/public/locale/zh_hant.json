@@ -406,6 +406,7 @@
             "matchRegex": "匹配正規",
             "matchRegexPlaceholder": "留空則預設按分組名稱模糊比對",
             "matchRegexInvalid": "正規無效",
+            "matchRegexHint": "支援行內旗標，寫在開頭：(?i) 忽略大小寫、(?s) 點號匹配換行、(?m) 多行模式，如 (?i)gpt",
             "firstTokenTimeOut": "首字逾時",
             "firstTokenTimeOutHint": "單位秒，僅串流響應起效，0 表示不限制",
             "sessionKeepTime": "會話保持",

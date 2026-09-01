@@ -360,7 +360,19 @@ export function GroupEditor({
                             />
                         </Field>
                         <Field>
-                            <FieldLabel htmlFor="group-match-regex">{t('form.matchRegex')}</FieldLabel>
+                            <FieldLabel htmlFor="group-match-regex">
+                                {t('form.matchRegex')}
+                                <TooltipProvider>
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <HelpCircle className="size-4 text-muted-foreground cursor-help" />
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                            {t('form.matchRegexHint')}
+                                        </TooltipContent>
+                                    </Tooltip>
+                                </TooltipProvider>
+                            </FieldLabel>
                             <Input
                                 id="group-match-regex"
                                 value={matchRegex}

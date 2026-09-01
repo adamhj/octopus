@@ -406,6 +406,7 @@
             "matchRegex": "Match Regex",
             "matchRegexPlaceholder": "Leave empty to use default fuzzy match by group name",
             "matchRegexInvalid": "Invalid regex",
+            "matchRegexHint": "Inline flags at the start: (?i) ignore case, (?s) dot matches newline, (?m) multiline, e.g. (?i)gpt",
             "firstTokenTimeOut": "First Token Timeout",
             "firstTokenTimeOutHint": "Unit: seconds, only effective for streaming response, 0 = no limit",
             "sessionKeepTime": "Session Keep Time",
